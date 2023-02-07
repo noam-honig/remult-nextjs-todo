@@ -6,17 +6,6 @@ import { TasksController } from "../shared/TasksController";
 
 const taskRepo = remult.repo(Task);
 
-function fetchTasks() {
-  return taskRepo.find({
-    orderBy: {
-      completed: "asc",
-    },
-    where: {
-      completed: undefined,
-    },
-  });
-}
-
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -25,7 +14,6 @@ export default function Home() {
     e.preventDefault();
     try {
       const newTask = await taskRepo.insert({ title: newTaskTitle });
-      setTasks([...tasks, newTask]);
       setNewTaskTitle("");
     } catch (err: any) {
       alert(err.message);
@@ -34,14 +22,21 @@ export default function Home() {
 
   const setAllCompleted = async (completed: boolean) => {
     await TasksController.setAllCompleted(completed);
-    fetchTasks().then(setTasks);
   };
 
   const session = useSession();
 
   useEffect(() => {
     if (session.status === "unauthenticated") signIn();
-    else fetchTasks().then(setTasks);
+    else {
+      return taskRepo
+        .liveQuery({
+          orderBy: {
+            completed: "asc",
+          },
+        })
+        .subscribe(({ applyChanges }) => setTasks(applyChanges));
+    }
   }, [session]);
   return (
     <div className="bg-gray-50 h-screen flex items-center flex-col justify-center text-lg">
@@ -79,14 +74,17 @@ export default function Home() {
           const setTask = (value: Task) =>
             setTasks(tasks.map((t) => (t === task ? value : t)));
 
-          const setCompleted = async (completed: boolean) =>
-            setTask(await taskRepo.save({ ...task, completed }));
+          const setCompleted = async (completed: boolean) => {
+            const t = { ...task, completed };
+            setTask(t);
+            await taskRepo.save(t);
+          };
 
           const setTitle = (title: string) => setTask({ ...task, title });
 
           const saveTask = async () => {
             try {
-              setTask(await taskRepo.save(task));
+              await taskRepo.save(task);
             } catch (err: any) {
               alert(err.message);
             }
@@ -95,7 +93,6 @@ export default function Home() {
           const deleteTask = async () => {
             try {
               await taskRepo.delete(task);
-              setTasks(tasks.filter((t) => t !== task));
             } catch (err: any) {
               alert(err.message);
             }
